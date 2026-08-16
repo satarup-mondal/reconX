@@ -6,13 +6,17 @@ from backend.models import ScanResult
 def save_result(
     db: Session,
     scan_id: int,
+    module: str,
     result_type: str,
-    value: str
+    value: str,
+    metadata: dict | None = None
 ):
     result = ScanResult(
         scan_id=scan_id,
+        module=module,
         result_type=result_type,
-        value=value
+        value=value,
+        result_metadata=metadata
     )
 
     db.add(result)
