@@ -3,9 +3,7 @@ from backend.database import SessionLocal
 from backend.models import Scan, Target
 from backend.result_service import save_result
 
-from backend.recon.http_probe import probe_http
-from backend.recon.dns_probe import probe_dns
-from backend.recon.port_probe import probe_ports
+from backend.recon.registry import RECON_MODULES, SCAN_PROFILES
 
 
 def run_worker():
@@ -53,116 +51,71 @@ def run_worker():
                 )
                 continue
 
-            scan.status = "running"
-            db.commit()
+            # ----------------------------------------
+            # Validate profile
+            # ----------------------------------------
+
+            profile = scan.profile
+
+            if profile not in SCAN_PROFILES:
+                scan.status = "failed"
+                db.commit()
+
+                print(
+                    f"[WORKER] Invalid profile: {profile}"
+                )
+                continue
+
+            modules = SCAN_PROFILES[profile]
 
             print(f"[WORKER] Scan {scan.id} started")
             print(f"[WORKER] Target: {target.domain}")
+            print(f"[WORKER] Profile: {profile}")
+            print(f"[WORKER] Modules: {modules}")
+
+            scan.status = "running"
+            db.commit()
 
             # Host without port
             host = target.domain.split(":", 1)[0]
 
             # ----------------------------------------
-            # 1. HTTP PROBE
+            # Execute profile modules
             # ----------------------------------------
 
-            http_result = probe_http(target.domain)
+            for module_name in modules:
 
-            if http_result["status"] == "success":
+                module_config = RECON_MODULES.get(module_name)
 
-                save_result(
-                    db=db,
-                    scan_id=scan.id,
-                    result_type="http_status",
-                    value=str(http_result["status_code"])
+                if not module_config:
+                    print(
+                        f"[WORKER] Unknown module: {module_name}"
+                    )
+                    continue
+
+                module_function = module_config["function"]
+                module_handler = module_config["handler"]
+                target_type = module_config["target"]
+
+                if target_type == "host":
+                    module_target = host
+                else:
+                    module_target = target.domain
+
+                print(
+                    f"[WORKER] Running module: {module_name}"
                 )
 
-                if http_result.get("content_type"):
-                    save_result(
-                        db=db,
-                        scan_id=scan.id,
-                        result_type="content_type",
-                        value=http_result["content_type"]
-                    )
-
-                if http_result.get("server"):
-                    save_result(
-                        db=db,
-                        scan_id=scan.id,
-                        result_type="server",
-                        value=http_result["server"]
-                    )
-
-                save_result(
-                    db=db,
-                    scan_id=scan.id,
-                    result_type="final_url",
-                    value=http_result["final_url"]
-                )
-
-            else:
-                save_result(
-                    db=db,
-                    scan_id=scan.id,
-                    result_type=http_result["status"],
-                    value=str(
-                        http_result.get(
-                            "error",
-                            http_result
-                        )
-                    )
+                module_handler(
+                    module_function,
+                    module_target,
+                    save_result,
+                    db,
+                    scan.id
                 )
 
             # ----------------------------------------
-            # 2. DNS PROBE
-            # ----------------------------------------
-
-            dns_result = probe_dns(host)
-
-            if dns_result["status"] == "success":
-
-                for address in dns_result["addresses"]:
-                    save_result(
-                        db=db,
-                        scan_id=scan.id,
-                        result_type="dns",
-                        value=address
-                    )
-
-            else:
-                save_result(
-                    db=db,
-                    scan_id=scan.id,
-                    result_type="dns_error",
-                    value=dns_result["error"]
-                )
-
-            # ----------------------------------------
-            # 3. PORT PROBE
-            # ----------------------------------------
-
-            port_result = probe_ports(host)
-
-            if port_result["status"] == "success":
-
-                for port in port_result["open_ports"]:
-                    save_result(
-                        db=db,
-                        scan_id=scan.id,
-                        result_type="open_port",
-                        value=str(port)
-                    )
-
-            else:
-                save_result(
-                    db=db,
-                    scan_id=scan.id,
-                    result_type="port_error",
-                    value=str(port_result)
-                )
-
-            # ----------------------------------------
-            # COMPLETE
+            # Complete
             # ----------------------------------------
 
             scan.status = "completed"

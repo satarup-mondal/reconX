@@ -27,6 +27,12 @@ class Scan(Base):
         String,
         nullable=False,
         default="queued"
+    ) 
+
+    profile = Column(
+        String,
+        nullable=False,
+        default="basic"
     )
 
     created_at = Column(

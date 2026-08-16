@@ -5,6 +5,7 @@ from sqlalchemy.orm import Session
 from backend.database import SessionLocal
 from backend.models import Scan, ScanResult, Target
 from backend.queue import QUEUE_NAME, redis_client
+from backend.recon.registry import SCAN_PROFILES
 
 
 router = APIRouter(
@@ -15,6 +16,7 @@ router = APIRouter(
 
 class ScanRequest(BaseModel):
     target_id: int
+    profile: str = "basic"
 
 
 def get_db():
@@ -31,7 +33,7 @@ def create_scan(
     scan_request: ScanRequest,
     db: Session = Depends(get_db)
 ):
-    # Check whether the target exists
+    # Check target
     target = db.query(Target).filter(
         Target.id == scan_request.target_id
     ).first()
@@ -41,16 +43,24 @@ def create_scan(
             "message": "Target not found"
         }
 
-    # Create a new scan
+    # Validate scan profile
+    if scan_request.profile not in SCAN_PROFILES:
+        return {
+            "message": "Invalid scan profile",
+            "available_profiles": list(SCAN_PROFILES.keys())
+        }
+
+    # Create scan
     new_scan = Scan(
-        target_id=target.id
+        target_id=target.id,
+        profile=scan_request.profile
     )
 
     db.add(new_scan)
     db.commit()
     db.refresh(new_scan)
 
-    # Add scan ID to Valkey queue
+    # Queue scan
     redis_client.rpush(
         QUEUE_NAME,
         str(new_scan.id)
@@ -60,6 +70,7 @@ def create_scan(
         "message": "Scan queued",
         "id": new_scan.id,
         "target_id": new_scan.target_id,
+        "profile": new_scan.profile,
         "status": new_scan.status
     }
 
@@ -90,6 +101,7 @@ def get_scan(
     return {
         "id": scan.id,
         "target_id": scan.target_id,
+        "profile": scan.profile,
         "status": scan.status,
         "created_at": scan.created_at
     }
@@ -100,7 +112,7 @@ def get_scan_results(
     scan_id: int,
     db: Session = Depends(get_db)
 ):
-    # First check that the scan exists
+    # Check scan
     scan = db.query(Scan).filter(
         Scan.id == scan_id
     ).first()
@@ -110,7 +122,7 @@ def get_scan_results(
             "message": "Scan not found"
         }
 
-    # Fetch all results belonging to this scan
+    # Get scan results
     results = db.query(ScanResult).filter(
         ScanResult.scan_id == scan_id
     ).all()
