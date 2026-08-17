@@ -5,19 +5,26 @@ from backend.recon.tech_probe import probe_technology
 from backend.recon.subdomain_probe import probe_subdomains
 
 
+# =========================================================
+# HTTP
+# =========================================================
+
 def run_http(module, target, save_result, db, scan_id):
     result = module(target)
 
     if result["status"] == "success":
+
+        metadata = {
+            "target": target
+        }
+
         save_result(
             db=db,
             scan_id=scan_id,
             module="http",
             result_type="status_code",
             value=str(result["status_code"]),
-            metadata={
-                "target": target
-            }
+            metadata=metadata
         )
 
         if result.get("content_type"):
@@ -27,7 +34,7 @@ def run_http(module, target, save_result, db, scan_id):
                 module="http",
                 result_type="content_type",
                 value=result["content_type"],
-                metadata=None
+                metadata=metadata
             )
 
         if result.get("server"):
@@ -37,17 +44,18 @@ def run_http(module, target, save_result, db, scan_id):
                 module="http",
                 result_type="server",
                 value=result["server"],
-                metadata=None
+                metadata=metadata
             )
 
-        save_result(
-            db=db,
-            scan_id=scan_id,
-            module="http",
-            result_type="final_url",
-            value=result["final_url"],
-            metadata=None
-        )
+        if result.get("final_url"):
+            save_result(
+                db=db,
+                scan_id=scan_id,
+                module="http",
+                result_type="final_url",
+                value=result["final_url"],
+                metadata=metadata
+            )
 
     else:
         save_result(
@@ -57,16 +65,22 @@ def run_http(module, target, save_result, db, scan_id):
             result_type="error",
             value=str(result.get("error", result)),
             metadata={
-                "status": result["status"]
+                "target": target,
+                "status": result.get("status")
             }
         )
 
+
+# =========================================================
+# DNS
+# =========================================================
 
 def run_dns(module, target, save_result, db, scan_id):
     result = module(target)
 
     if result["status"] == "success":
-        for address in result["addresses"]:
+
+        for address in result.get("addresses", []):
             save_result(
                 db=db,
                 scan_id=scan_id,
@@ -74,7 +88,10 @@ def run_dns(module, target, save_result, db, scan_id):
                 result_type="address",
                 value=address,
                 metadata={
-                    "hostname": result["hostname"]
+                    "hostname": result.get(
+                        "hostname",
+                        target
+                    )
                 }
             )
 
@@ -86,16 +103,21 @@ def run_dns(module, target, save_result, db, scan_id):
             result_type="error",
             value=str(result.get("error", result)),
             metadata={
-                "hostname": target,
-                "status": result["status"]
+                "hostname": target
             }
         )
+
+
+# =========================================================
+# PORTS
+# =========================================================
 
 def run_ports(module, target, save_result, db, scan_id):
     result = module(target)
 
     if result["status"] == "success":
-        for port in result["open_ports"]:
+
+        for port in result.get("open_ports", []):
             save_result(
                 db=db,
                 scan_id=scan_id,
@@ -114,23 +136,32 @@ def run_ports(module, target, save_result, db, scan_id):
             scan_id=scan_id,
             module="ports",
             result_type="error",
-            value=str(result),
+            value=str(result.get("error", result)),
             metadata={
                 "target": target
             }
         )
 
+
+# =========================================================
+# TECHNOLOGY
+# =========================================================
+
 def run_technology(module, target, save_result, db, scan_id):
     result = module(target)
 
     if result["status"] == "success":
-        for technology in result["technologies"]:
+
+        for technology in result.get(
+            "technologies",
+            []
+        ):
             save_result(
                 db=db,
                 scan_id=scan_id,
                 module="technology",
                 result_type="technology",
-                value=technology,
+                value=str(technology),
                 metadata={
                     "target": target
                 }
@@ -144,17 +175,24 @@ def run_technology(module, target, save_result, db, scan_id):
             result_type="error",
             value=str(result.get("error", result)),
             metadata={
-                "status": result["status"],
                 "target": target
             }
-        ) 
+        )
 
+
+# =========================================================
+# SUBDOMAINS
+# =========================================================
 
 def run_subdomain(module, target, save_result, db, scan_id):
     result = module(target)
 
     if result["status"] == "success":
-        for item in result["subdomains"]:
+
+        for item in result.get(
+            "subdomains",
+            []
+        ):
             save_result(
                 db=db,
                 scan_id=scan_id,
@@ -162,7 +200,10 @@ def run_subdomain(module, target, save_result, db, scan_id):
                 result_type="subdomain",
                 value=item["subdomain"],
                 metadata={
-                    "addresses": item["addresses"]
+                    "addresses": item.get(
+                        "addresses",
+                        []
+                    )
                 }
             )
 
@@ -178,7 +219,13 @@ def run_subdomain(module, target, save_result, db, scan_id):
             }
         )
 
+
+# =========================================================
+# MODULE REGISTRY
+# =========================================================
+
 RECON_MODULES = {
+
     "http": {
         "function": probe_http,
         "handler": run_http,
@@ -201,17 +248,22 @@ RECON_MODULES = {
         "function": probe_technology,
         "handler": run_technology,
         "target": "domain",
-    }, 
+    },
 
     "subdomain": {
         "function": probe_subdomains,
-        "handler" : run_subdomain, 
-        "target" : "host",
+        "handler": run_subdomain,
+        "target": "host",
     },
 }
 
 
+# =========================================================
+# SCAN PROFILES
+# =========================================================
+
 SCAN_PROFILES = {
+
     "basic": [
         "http",
         "dns",
@@ -227,13 +279,13 @@ SCAN_PROFILES = {
     "network": [
         "dns",
         "ports",
-    ], 
+    ],
 
-    "full" : [
+    "full": [
         "http",
-        "dns", 
+        "dns",
         "ports",
         "technology",
         "subdomain",
-    ], 
+    ],
 }
