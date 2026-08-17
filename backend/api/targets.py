@@ -1,6 +1,6 @@
 from fastapi import APIRouter, Depends
-from sqlalchemy.orm import Session
 from pydantic import BaseModel
+from sqlalchemy.orm import Session
 
 from backend.database import SessionLocal
 from backend.models import Target
@@ -14,6 +14,7 @@ router = APIRouter(
 
 class TargetRequest(BaseModel):
     domain: str
+    port: int | None = None
 
 
 def get_db():
@@ -27,11 +28,12 @@ def get_db():
 
 @router.post("/")
 def create_target(
-    target: TargetRequest,
+    target_request: TargetRequest,
     db: Session = Depends(get_db)
 ):
     new_target = Target(
-        domain=target.domain
+        domain=target_request.domain,
+        port=target_request.port
     )
 
     db.add(new_target)
@@ -39,35 +41,44 @@ def create_target(
     db.refresh(new_target)
 
     return {
-        "message": "Target created",
         "id": new_target.id,
-        "domain": new_target.domain
-    } 
+        "domain": new_target.domain,
+        "port": new_target.port
+    }
+
 
 @router.get("/")
-def get_targets(db: Session = Depends(get_db)):
+def get_targets(
+    db: Session = Depends(get_db)
+):
+    return db.query(Target).all()
 
-    targets = db.query(Target).all()
-
-    return targets
 
 @router.get("/{target_id}")
-def get_target(target_id: int, db: Session = Depends(get_db)):
-    target = db.query(Target).filter(Target.id == target_id).first()
+def get_target(
+    target_id: int,
+    db: Session = Depends(get_db)
+):
+    target = db.query(Target).filter(
+        Target.id == target_id
+    ).first()
 
     if not target:
         return {
             "message": "Target not found"
         }
 
-    return {
-        "id": target.id,
-        "domain": target.domain
-    } 
+    return target
+
 
 @router.delete("/{target_id}")
-def delete_target(target_id: int, db: Session = Depends(get_db)):
-    target = db.query(Target).filter(Target.id == target_id).first()
+def delete_target(
+    target_id: int,
+    db: Session = Depends(get_db)
+):
+    target = db.query(Target).filter(
+        Target.id == target_id
+    ).first()
 
     if not target:
         return {

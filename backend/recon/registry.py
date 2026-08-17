@@ -91,7 +91,6 @@ def run_dns(module, target, save_result, db, scan_id):
             }
         )
 
-
 def run_ports(module, target, save_result, db, scan_id):
     result = module(target)
 
@@ -104,6 +103,7 @@ def run_ports(module, target, save_result, db, scan_id):
                 result_type="open_port",
                 value=str(port),
                 metadata={
+                    "target": target,
                     "protocol": "tcp"
                 }
             )
@@ -119,7 +119,6 @@ def run_ports(module, target, save_result, db, scan_id):
                 "target": target
             }
         )
-
 
 def run_technology(module, target, save_result, db, scan_id):
     result = module(target)

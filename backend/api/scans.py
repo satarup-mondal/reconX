@@ -2,6 +2,7 @@ from fastapi import APIRouter, Depends
 from pydantic import BaseModel
 from sqlalchemy.orm import Session
 
+from backend.asset_service import build_asset_map
 from backend.database import SessionLocal
 from backend.models import Scan, ScanResult, Target
 from backend.queue import QUEUE_NAME, redis_client
@@ -33,7 +34,10 @@ def create_scan(
     scan_request: ScanRequest,
     db: Session = Depends(get_db)
 ):
+    # ----------------------------------------
     # Check target
+    # ----------------------------------------
+
     target = db.query(Target).filter(
         Target.id == scan_request.target_id
     ).first()
@@ -43,14 +47,22 @@ def create_scan(
             "message": "Target not found"
         }
 
-    # Validate scan profile
+    # ----------------------------------------
+    # Validate profile
+    # ----------------------------------------
+
     if scan_request.profile not in SCAN_PROFILES:
         return {
             "message": "Invalid scan profile",
-            "available_profiles": list(SCAN_PROFILES.keys())
+            "available_profiles": list(
+                SCAN_PROFILES.keys()
+            )
         }
 
+    # ----------------------------------------
     # Create scan
+    # ----------------------------------------
+
     new_scan = Scan(
         target_id=target.id,
         profile=scan_request.profile
@@ -60,7 +72,10 @@ def create_scan(
     db.commit()
     db.refresh(new_scan)
 
+    # ----------------------------------------
     # Queue scan
+    # ----------------------------------------
+
     redis_client.rpush(
         QUEUE_NAME,
         str(new_scan.id)
@@ -112,7 +127,10 @@ def get_scan_results(
     scan_id: int,
     db: Session = Depends(get_db)
 ):
+    # ----------------------------------------
     # Check scan
+    # ----------------------------------------
+
     scan = db.query(Scan).filter(
         Scan.id == scan_id
     ).first()
@@ -122,9 +140,42 @@ def get_scan_results(
             "message": "Scan not found"
         }
 
-    # Get scan results
-    results = db.query(ScanResult).filter(
-        ScanResult.scan_id == scan_id
-    ).all()
+    # ----------------------------------------
+    # Get results
+    # ----------------------------------------
+
+    results = (
+        db.query(ScanResult)
+        .filter(ScanResult.scan_id == scan_id)
+        .all()
+    )
 
     return results
+
+
+@router.get("/{scan_id}/assets")
+def get_scan_assets(
+    scan_id: int,
+    db: Session = Depends(get_db)
+):
+    # ----------------------------------------
+    # Check scan
+    # ----------------------------------------
+
+    scan = db.query(Scan).filter(
+        Scan.id == scan_id
+    ).first()
+
+    if not scan:
+        return {
+            "message": "Scan not found"
+        }
+
+    # ----------------------------------------
+    # Build asset map
+    # ----------------------------------------
+
+    return build_asset_map(
+        db=db,
+        scan_id=scan_id
+    )

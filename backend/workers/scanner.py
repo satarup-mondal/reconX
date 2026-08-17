@@ -68,24 +68,35 @@ def run_worker():
 
             modules = SCAN_PROFILES[profile]
 
+            # ----------------------------------------
+            # Target info
+            # ----------------------------------------
+
+            domain = target.domain
+            port = target.port
+
+            if port:
+                target_url = f"{domain}:{port}"
+            else:
+                target_url = domain
+
             print(f"[WORKER] Scan {scan.id} started")
-            print(f"[WORKER] Target: {target.domain}")
+            print(f"[WORKER] Target: {target_url}")
             print(f"[WORKER] Profile: {profile}")
             print(f"[WORKER] Modules: {modules}")
 
             scan.status = "running"
             db.commit()
 
-            # Host without port
-            host = target.domain.split(":", 1)[0]
-
             # ----------------------------------------
-            # Execute profile modules
+            # Execute modules
             # ----------------------------------------
 
             for module_name in modules:
 
-                module_config = RECON_MODULES.get(module_name)
+                module_config = RECON_MODULES.get(
+                    module_name
+                )
 
                 if not module_config:
                     print(
@@ -97,10 +108,18 @@ def run_worker():
                 module_handler = module_config["handler"]
                 target_type = module_config["target"]
 
+                # ----------------------------------------
+                # Decide module target
+                # ----------------------------------------
+
                 if target_type == "host":
-                    module_target = host
+                    module_target = domain
+
+                elif target_type == "domain":
+                    module_target = target_url
+
                 else:
-                    module_target = target.domain
+                    module_target = domain
 
                 print(
                     f"[WORKER] Running module: {module_name}"

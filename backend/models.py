@@ -26,6 +26,11 @@ class Target(Base):
         nullable=False
     )
 
+    port = Column(
+        Integer,
+        nullable=True
+    )
+
 
 class Scan(Base):
     __tablename__ = "scans"
