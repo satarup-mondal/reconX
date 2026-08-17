@@ -3,10 +3,21 @@ from urllib.parse import urlsplit
 
 from sqlalchemy.orm import Session
 
-from backend.models import ScanResult
+from backend.models import Scan, ScanResult, Target
 
 
 def resolve_target_ips(target: str) -> list[str]:
+    """
+    Resolve a target such as:
+
+        recon.local
+        recon.local:9000
+        http://recon.local:9000
+        127.0.0.1:9000
+
+    into IP addresses.
+    """
+
     if not target:
         return []
 
@@ -31,27 +42,67 @@ def resolve_target_ips(target: str) -> list[str]:
 
 
 def extract_target_port(target: str) -> int | None:
+    """
+    Extract port from a target/URL.
+    """
+
     if not target:
         return None
 
-    if "://" not in target:
-        parsed = urlsplit(f"//{target}")
-    else:
-        parsed = urlsplit(target)
+    try:
+        if "://" not in target:
+            parsed = urlsplit(f"//{target}")
+        else:
+            parsed = urlsplit(target)
 
-    return parsed.port
+        return parsed.port
+
+    except ValueError:
+        return None
 
 
 def build_asset_map(
     db: Session,
     scan_id: int
 ) -> dict:
+    """
+    Build correlated assets from normalized scan results.
+    """
 
     results = (
         db.query(ScanResult)
         .filter(ScanResult.scan_id == scan_id)
         .all()
     )
+
+    # ---------------------------------------------------------
+    # Find scan + target for fallback metadata
+    # ---------------------------------------------------------
+
+    scan = (
+        db.query(Scan)
+        .filter(Scan.id == scan_id)
+        .first()
+    )
+
+    scan_target = None
+
+    if scan:
+        target = (
+            db.query(Target)
+            .filter(Target.id == scan.target_id)
+            .first()
+        )
+
+        if target:
+            scan_target = target.domain
+
+            if target.port:
+                scan_target = f"{target.domain}:{target.port}"
+
+    # ---------------------------------------------------------
+    # Asset storage
+    # ---------------------------------------------------------
 
     assets = {}
 
@@ -68,64 +119,96 @@ def build_asset_map(
 
         return assets[ip]
 
-    def add_hostname(ip: str, hostname: str):
+    # ---------------------------------------------------------
+    # Helpers
+    # ---------------------------------------------------------
+
+    def add_hostname(
+        ip: str,
+        hostname: str
+    ):
         asset = get_asset(ip)
 
-        if hostname and hostname not in asset["hostnames"]:
+        if (
+            hostname
+            and hostname not in asset["hostnames"]
+        ):
             asset["hostnames"].append(hostname)
 
-    def add_port(ip: str, port: str):
+    def add_port(
+        ip: str,
+        port: str
+    ):
         asset = get_asset(ip)
 
         if port not in asset["ports"]:
             asset["ports"].append(port)
 
-    def add_service(
+    def get_service(
         ip: str,
         port: str,
-        protocol: str,
-        service: str | None = None
+        protocol: str = "tcp",
+        service_name: str = "unknown"
+    ) -> dict:
+
+        asset = get_asset(ip)
+
+        for service in asset["services"]:
+            if (
+                service["port"] == port
+                and service["protocol"] == protocol
+            ):
+                if (
+                    service_name
+                    and service["service"] == "unknown"
+                ):
+                    service["service"] = service_name
+
+                return service
+
+        service = {
+            "port": port,
+            "protocol": protocol,
+            "service": service_name or "unknown",
+        }
+
+        asset["services"].append(service)
+
+        return service
+
+    def add_technology(
+        ip: str,
+        technology: str
     ):
         asset = get_asset(ip)
 
-        for existing in asset["services"]:
-            if (
-                existing["port"] == port
-                and existing["protocol"] == protocol
-            ):
-                # Upgrade unknown service when we later
-                # observe a concrete service.
-                if (
-                    service
-                    and existing["service"] in (None, "unknown")
-                ):
-                    existing["service"] = service
-
-                return
-
-        asset["services"].append({
-            "port": port,
-            "protocol": protocol,
-            "service": service or "unknown",
-        })
-
-    def add_technology(ip: str, technology: str):
-        asset = get_asset(ip)
-
-        if technology not in asset["technologies"]:
+        if (
+            technology
+            and technology not in asset["technologies"]
+        ):
             asset["technologies"].append(technology)
 
-    def add_subdomain(ip: str, subdomain: str):
+    def add_subdomain(
+        ip: str,
+        subdomain: str
+    ):
         asset = get_asset(ip)
 
-        if subdomain not in asset["subdomains"]:
+        if (
+            subdomain
+            and subdomain not in asset["subdomains"]
+        ):
             asset["subdomains"].append(subdomain)
 
-        if subdomain not in asset["hostnames"]:
+        if (
+            subdomain
+            and subdomain not in asset["hostnames"]
+        ):
             asset["hostnames"].append(subdomain)
 
     # =========================================================
-    # PASS 1 — DNS → IP + hostname
+    # PASS 1
+    # DNS -> IP + hostname
     # =========================================================
 
     for result in results:
@@ -146,10 +229,14 @@ def build_asset_map(
                 )
 
             if hostname:
-                add_hostname(ip, hostname)
+                add_hostname(
+                    ip=ip,
+                    hostname=hostname
+                )
 
     # =========================================================
-    # PASS 2 — correlate results
+    # PASS 2
+    # Correlate all remaining modules
     # =========================================================
 
     for result in results:
@@ -166,33 +253,44 @@ def build_asset_map(
             module == "ports"
             and result_type == "open_port"
         ):
-            target = None
+            target_value = None
             protocol = "tcp"
 
             if result.result_metadata:
-                target = result.result_metadata.get("target")
+                target_value = result.result_metadata.get(
+                    "target"
+                )
+
                 protocol = result.result_metadata.get(
                     "protocol",
                     "tcp"
                 )
 
-            if not target:
+            if not target_value:
+                target_value = scan_target
+
+            if not target_value:
                 continue
 
-            target_ips = resolve_target_ips(target)
+            target_ips = resolve_target_ips(
+                target_value
+            )
 
             for ip in target_ips:
 
-                add_port(ip, value)
+                add_port(
+                    ip=ip,
+                    port=value
+                )
 
-                add_service(
+                get_service(
                     ip=ip,
                     port=value,
                     protocol=protocol,
-                    service=None
+                    service_name="unknown"
                 )
 
-               # -----------------------------------------------------
+        # -----------------------------------------------------
         # HTTP
         # -----------------------------------------------------
 
@@ -205,51 +303,47 @@ def build_asset_map(
                 "final_url",
             )
         ):
-            target = None
+            target_value = None
 
             if result.result_metadata:
-                target = result.result_metadata.get(
+                target_value = result.result_metadata.get(
                     "target"
                 )
 
-            if not target:
+            # Fallback because some HTTP results don't
+            # currently contain target metadata.
+            if not target_value:
+                target_value = scan_target
+
+            if not target_value:
                 continue
 
-            target_ips = resolve_target_ips(target)
+            target_ips = resolve_target_ips(
+                target_value
+            )
 
-            target_port = extract_target_port(target)
+            target_port = extract_target_port(
+                target_value
+            )
 
             if target_port is None:
-                target_port = (
-                    443
-                    if target.startswith("https://")
-                    else 80
-                )
+                if target_value.startswith(
+                    "https://"
+                ):
+                    target_port = 443
+                else:
+                    target_port = 80
+
+            target_port = str(target_port)
 
             for ip in target_ips:
 
-                asset = get_asset(ip)
-
-                service = None
-
-                for existing in asset["services"]:
-                    if (
-                        existing["port"]
-                        == str(target_port)
-                        and existing["protocol"]
-                        == "tcp"
-                    ):
-                        service = existing
-                        break
-
-                if service is None:
-                    service = {
-                        "port": str(target_port),
-                        "protocol": "tcp",
-                        "service": "http",
-                    }
-
-                    asset["services"].append(service)
+                service = get_service(
+                    ip=ip,
+                    port=target_port,
+                    protocol="tcp",
+                    service_name="http"
+                )
 
                 if result_type == "status_code":
                     service["status_code"] = value
@@ -271,17 +365,22 @@ def build_asset_map(
             module == "technology"
             and result_type == "technology"
         ):
-            target = None
+            target_value = None
 
             if result.result_metadata:
-                target = result.result_metadata.get(
+                target_value = result.result_metadata.get(
                     "target"
                 )
 
-            if not target:
+            if not target_value:
+                target_value = scan_target
+
+            if not target_value:
                 continue
 
-            target_ips = resolve_target_ips(target)
+            target_ips = resolve_target_ips(
+                target_value
+            )
 
             for ip in target_ips:
 
@@ -313,8 +412,11 @@ def build_asset_map(
                     subdomain=value
                 )
 
+    # ---------------------------------------------------------
+    # Final response
+    # ---------------------------------------------------------
+
     return {
         "scan_id": scan_id,
         "assets": list(assets.values())
-    } 
-
+    }

@@ -105,3 +105,55 @@ class ScanResult(Base):
         DateTime,
         default=datetime.utcnow
     )
+
+
+class Finding(Base):
+    __tablename__ = "findings"
+
+    id = Column(
+        Integer,
+        primary_key=True,
+        index=True
+    )
+
+    scan_id = Column(
+        Integer,
+        ForeignKey("scans.id"),
+        nullable=False
+    )
+
+    title = Column(
+        String,
+        nullable=False
+    )
+
+    severity = Column(
+        String,
+        nullable=False,
+        default="info"
+    )
+
+    description = Column(
+        String,
+        nullable=False
+    )
+
+    evidence = Column(
+        String,
+        nullable=True
+    )
+
+    asset = Column(
+        String,
+        nullable=True
+    )
+
+    remediation = Column(
+        String,
+        nullable=True
+    )
+
+    created_at = Column(
+        DateTime,
+        default=datetime.utcnow
+    )
