@@ -2,6 +2,7 @@ from backend.recon.http_probe import probe_http
 from backend.recon.dns_probe import probe_dns
 from backend.recon.port_probe import probe_ports
 from backend.recon.tech_probe import probe_technology
+from backend.recon.subdomain_probe import probe_subdomains
 
 
 def run_http(module, target, save_result, db, scan_id):
@@ -147,8 +148,36 @@ def run_technology(module, target, save_result, db, scan_id):
                 "status": result["status"],
                 "target": target
             }
-        )
+        ) 
 
+
+def run_subdomain(module, target, save_result, db, scan_id):
+    result = module(target)
+
+    if result["status"] == "success":
+        for item in result["subdomains"]:
+            save_result(
+                db=db,
+                scan_id=scan_id,
+                module="subdomain",
+                result_type="subdomain",
+                value=item["subdomain"],
+                metadata={
+                    "addresses": item["addresses"]
+                }
+            )
+
+    else:
+        save_result(
+            db=db,
+            scan_id=scan_id,
+            module="subdomain",
+            result_type="error",
+            value=str(result.get("error", result)),
+            metadata={
+                "target": target
+            }
+        )
 
 RECON_MODULES = {
     "http": {
@@ -173,6 +202,12 @@ RECON_MODULES = {
         "function": probe_technology,
         "handler": run_technology,
         "target": "domain",
+    }, 
+
+    "subdomain": {
+        "function": probe_subdomains,
+        "handler" : run_subdomain, 
+        "target" : "host",
     },
 }
 
@@ -193,5 +228,13 @@ SCAN_PROFILES = {
     "network": [
         "dns",
         "ports",
-    ],
+    ], 
+
+    "full" : [
+        "http",
+        "dns", 
+        "ports",
+        "technology",
+        "subdomain",
+    ], 
 }

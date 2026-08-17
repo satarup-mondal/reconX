@@ -11,6 +11,20 @@ def save_result(
     value: str,
     metadata: dict | None = None
 ):
+    existing = (
+        db.query(ScanResult)
+        .filter(
+            ScanResult.scan_id == scan_id,
+            ScanResult.module == module,
+            ScanResult.result_type == result_type,
+            ScanResult.value == value
+        )
+        .first()
+    )
+
+    if existing:
+        return existing
+
     result = ScanResult(
         scan_id=scan_id,
         module=module,
