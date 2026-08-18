@@ -6,7 +6,7 @@ from sqlalchemy import (
     ForeignKey,
     Integer,
     JSON,
-    String
+    String,
 )
 
 from backend.database import Base
@@ -18,17 +18,17 @@ class Target(Base):
     id = Column(
         Integer,
         primary_key=True,
-        index=True
+        index=True,
     )
 
     domain = Column(
         String,
-        nullable=False
+        nullable=False,
     )
 
     port = Column(
         Integer,
-        nullable=True
+        nullable=True,
     )
 
 
@@ -38,30 +38,30 @@ class Scan(Base):
     id = Column(
         Integer,
         primary_key=True,
-        index=True
+        index=True,
     )
 
     target_id = Column(
         Integer,
         ForeignKey("targets.id"),
-        nullable=False
+        nullable=False,
     )
 
     status = Column(
         String,
         nullable=False,
-        default="queued"
+        default="queued",
     )
 
     profile = Column(
         String,
         nullable=False,
-        default="basic"
+        default="basic",
     )
 
     created_at = Column(
         DateTime,
-        default=datetime.utcnow
+        default=datetime.utcnow,
     )
 
 
@@ -71,39 +71,41 @@ class ScanResult(Base):
     id = Column(
         Integer,
         primary_key=True,
-        index=True
+        index=True,
     )
 
     scan_id = Column(
         Integer,
         ForeignKey("scans.id"),
-        nullable=False
+        nullable=False,
     )
 
     module = Column(
         String,
-        nullable=False
+        nullable=False,
     )
 
     result_type = Column(
         String,
-        nullable=False
+        nullable=False,
     )
 
     value = Column(
         String,
-        nullable=False
+        nullable=False,
     )
 
+    # Python attribute = result_metadata
+    # Actual SQLite column = metadata
     result_metadata = Column(
         "metadata",
         JSON,
-        nullable=True
+        nullable=True,
     )
 
     created_at = Column(
         DateTime,
-        default=datetime.utcnow
+        default=datetime.utcnow,
     )
 
 
@@ -113,47 +115,47 @@ class Finding(Base):
     id = Column(
         Integer,
         primary_key=True,
-        index=True
+        index=True,
     )
 
     scan_id = Column(
         Integer,
         ForeignKey("scans.id"),
-        nullable=False
+        nullable=False,
     )
 
     title = Column(
         String,
-        nullable=False
+        nullable=False,
     )
 
     severity = Column(
         String,
         nullable=False,
-        default="info"
+        default="info",
     )
 
     description = Column(
         String,
-        nullable=False
+        nullable=False,
     )
 
     evidence = Column(
         String,
-        nullable=True
+        nullable=True,
     )
 
     asset = Column(
         String,
-        nullable=True
+        nullable=True,
     )
 
     remediation = Column(
         String,
-        nullable=True
+        nullable=True,
     )
 
     created_at = Column(
         DateTime,
-        default=datetime.utcnow
+        default=datetime.utcnow,
     )

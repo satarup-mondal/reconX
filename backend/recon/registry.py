@@ -12,20 +12,22 @@ from backend.recon.subdomain_probe import probe_subdomains
 def run_http(module, target, save_result, db, scan_id):
     result = module(target)
 
-    if result["status"] == "success":
+    metadata = {
+        "target": target,
+        "headers": result.get("headers", {})
+    }
 
-        metadata = {
-            "target": target
-        }
+    if result["status"] in ("success", "http_error"):
 
-        save_result(
-            db=db,
-            scan_id=scan_id,
-            module="http",
-            result_type="status_code",
-            value=str(result["status_code"]),
-            metadata=metadata
-        )
+        if result.get("status_code") is not None:
+            save_result(
+                db=db,
+                scan_id=scan_id,
+                module="http",
+                result_type="status_code",
+                value=str(result["status_code"]),
+                metadata=metadata
+            )
 
         if result.get("content_type"):
             save_result(
@@ -64,12 +66,8 @@ def run_http(module, target, save_result, db, scan_id):
             module="http",
             result_type="error",
             value=str(result.get("error", result)),
-            metadata={
-                "target": target,
-                "status": result.get("status")
-            }
+            metadata=metadata
         )
-
 
 # =========================================================
 # DNS
