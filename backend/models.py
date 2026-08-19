@@ -1,3 +1,4 @@
+
 from datetime import datetime
 
 from sqlalchemy import (
@@ -122,6 +123,12 @@ class Finding(Base):
         Integer,
         ForeignKey("scans.id"),
         nullable=False,
+    )
+
+    # Stable identifier for the detection rule.
+    rule_id = Column(
+        String,
+        nullable=True,
     )
 
     title = Column(
